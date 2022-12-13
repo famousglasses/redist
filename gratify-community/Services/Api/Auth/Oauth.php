@@ -16,7 +16,9 @@ class Oauth {
 	 */
 	public function getToken(App $app, array $request) {
 		try {
-			$client_id = $app->assert($request['client_id'], 'string+', null, 'client id');
+			$no_redirect = (bool)($request['no_redirect'] ?? false);
+			$no_redirect = $no_redirect || _CLI;
+			$client_id = $app->assert(@$request['client_id'], 'string+', null, 'client id');
 			$db = $app->getDatabase();
 			$res = $db->get('auth_clients', ['client_id' => $client_id]);
 
@@ -26,8 +28,8 @@ class Oauth {
 
 			$client = $res->next();
 			$client_scopes = explode(' ', $client['scope']);
-			$redirect_url = $app->assert($request['redirect_url'], 'string?', null, 'redirect url');
-			$scope = $app->assert($request['scope'], 'regex?', Patterns::SCOPE, 'scope');
+			$redirect_url = $app->assert(@$request['redirect_url'], 'string?', null, 'redirect url');
+			$scope = $app->assert(@$request['scope'], 'regex?', Patterns::SCOPE, 'scope');
 
 			if (!$redirect_url) {
 				$redirect_url = Util::url();
@@ -37,11 +39,13 @@ class Oauth {
 				throw new StdException('invalid redirect url');
 			}
 
-			$redirect_domain = parse_url($redirect_url, PHP_URL_HOST);
-			$allowed_domains = explode(',', $client['redirect_domains']);
+			if (!$no_redirect) {
+				$redirect_domain = parse_url($redirect_url, PHP_URL_HOST);
+				$allowed_domains = explode(',', $client['redirect_domains']);
 
-			if (!in_array($redirect_domain, $allowed_domains)) {
-				throw new StdException('redirect url not allowed');
+				if (!in_array($redirect_domain, $allowed_domains)) {
+					throw new StdException('redirect url not allowed');
+				}
 			}
 
 			if (!empty($scope)) {
@@ -70,6 +74,10 @@ class Oauth {
 					$password = $request['password'] ?? '';
 					$userinfo = $this->grantPassword($app, $username, $password);
 					break;
+				case 'client_credentials':
+					$client_secret = $request['client_secret'] ?? '';
+					$userinfo = $this->grantClientCredentials($app, $client_id, $client_secret);
+					break;
 				default:
 					throw new StdException('grant type not supported');
 			}
@@ -93,19 +101,19 @@ class Oauth {
 
 			$id_vals['scope'] = $scope;
 			$id_token = base64_encode(json_encode($id_vals));
-			$permits = explode(' ', $userinfo['permit']);
-			$prefs = is_array($userinfo['prefs']) ? $userinfo['prefs'] : json_decode($userinfo['prefs'], true);
+			$permits = explode(' ', $userinfo['permit'] ?? '');
+			$prefs = is_array(@$userinfo['prefs']) ? $userinfo['prefs'] : json_decode($userinfo['prefs'] ?? '{}', true);
 
 			$session->set('id', $userinfo['id']);
-			$session->set('role', $userinfo['role']);
+			$session->set('role', $userinfo['role'] ?? '');
 			$session->set('permits', $permits);
 			$session->set('scopes', $scopes);
-			$session->set('email', $userinfo['email']);
+			$session->set('email', $userinfo['email'] ?? '');
 			$session->set('prefs', $prefs);
 			$session->set('access_token', $access_token);
 			$session->set('id_token', $id_token);
 
-			if (_IS_AJAX) {
+			if (_IS_AJAX || $no_redirect) {
 				return [
 					'access_token' => $access_token,
 					'id_token' => $id_token
@@ -123,7 +131,7 @@ class Oauth {
 
 			$app->redirect($redirect_url);
 		} catch (StdException $e) {
-			if (_IS_AJAX) {
+			if (_IS_AJAX || $no_redirect) {
 				throw $e;
 			}
 
@@ -164,11 +172,30 @@ class Oauth {
 		return null;
 	}
 
+	private function grantClientCredentials(App $app, string $client_id, string $client_secret) {
+		$db = $app->getDatabase();
+
+		$res = $db->get('auth_clients', [
+			'client_id' => $client_id,
+			'client_secret' => $client_secret
+		]);
+
+		if ($res->num_rows == 0) {
+			return null;
+		}
+
+		$row = $res->next();
+
+		return [
+			'id' => $row['id']
+		];
+	}
+
 	public function forgotPassword(App $app, array $request) {
 		Request::requireGuest($app);
 
 		$db = $app->getDatabase();
-		$email = $app->assert($request['email'], 'email');
+		$email = $app->assert(@$request['email'], 'email');
 		$res = $db->get('users', ['email' => $email]);
 
 		if ($res->num_rows == 0) {

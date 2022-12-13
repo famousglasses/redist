@@ -1,6 +1,7 @@
 <?php
 
 namespace App\BootLoaders;
+use App\Libraries\Patterns;
 use Gratify\App;
 
 class Session {
@@ -30,13 +31,40 @@ class Session {
 			return true;
 		}
 
-		$session = $app->getSession(_SESSION_DRIVER_NONE, [
-			'use_cookies' => true
-		]);
+		$headers = array_change_key_case(getallheaders(), CASE_LOWER);
+		$authorization = $headers['authorization'] ?? '';
 
-		if (!$session->start()) {
-			throw new StdException('session fault');
+		if (!empty($authorization)) {
+			if (!preg_match(Patterns::HEADER_AUTHORIZATION, $authorization, $matches)) {
+				throw new StdException('invalid authorization header');
+			}
+
+			$scheme = strtolower($matches[1]);
+
+			if ($scheme != 'bearer') {
+				throw new StdException('invalid authorization scheme');
+			}
+
+			$token = $matches[2];
+
+			$session = $app->getSession(_SESSION_DRIVER_NONE, [
+				'use_cookies' => false
+			]);
+
+			if (!$session->start('sid', $token)) {
+				throw new StdException('session fault');
+			}
+		} else {
+			$session = $app->getSession(_SESSION_DRIVER_NONE, [
+				'use_cookies' => true
+			]);
+
+			if (!$session->start()) {
+				throw new StdException('session fault');
+			}
 		}
+
+		return true;
 	}
 }
 
