@@ -10,5 +10,5 @@ class Patterns {
 	const INVITE_CODE = '/^[a-z0-9]{6,12}$/i';
 	const DOMAIN_LIST = '/^(([a-z\d\.-]+\.)?[a-z\d-]+\.[a-z\d]+,?)+$/i';
 	const URL_PATH = '/^\/?([\w\d-]+\/?)*$/';
-	const HEADER_AUTHORIZATION = '/^[a-z]+ [a-z\d\+\/\.=-]+$/i';
+	const HEADER_AUTHORIZATION = '/^([a-z]+) ([a-z\d\+\/\.=-]+)$/i';
 }
